@@ -1,4 +1,6 @@
+# Gmail use kar rahe ho to App Password banao (normal password kaam nahi karega)
+# https://myaccount.google.com/apppasswords
 SMTP_HOST=smtp.gmail.com
 SMTP_PORT=465
-SMTP_USER=adminanandkumar@gmail.com     ← apna Gmail
-SMTP_PASS=tzfasfcztprffuqc        ← 16-char App Password
+SMTP_USER=adminanandkumar@gmail.com
+SMTP_PASS=tzfasfcztprffuqc
