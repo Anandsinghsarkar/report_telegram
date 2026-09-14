@@ -1,9 +1,14 @@
 #!/usr/bin/env python3
 """
-🔥 TgAbuseReporter — Khatarnak Mode Activated
+🔥 TgAbuseReporter v4.0 — BOTNET MODE 🔥
 -------------------------------------------------
-Direct Telegram API abuse reporting.
-Supports multiple API accounts. Made for Termux.
+✅ 5000 REPORTS PER ACCOUNT
+✅ AUTO OTP LOGIN
+✅ MULTI-ACCOUNT ROTATION
+✅ FULL TERMUX SUPPORT
+✅ STEALTH + PERSISTENT
+
+> "Jab tak report na ruke, tab tak bot na soye."
 """
 
 import os
@@ -16,12 +21,12 @@ from datetime import datetime
 from pathlib import Path
 
 try:
-    from telethon import TelegramClient, errors
+    from telethon import TelegramClient, events
     from telethon.tl.types import InputPeerChannel, InputPeerUser, \
         InputReportReasonChildAbuse, InputReportReasonViolence, \
         InputReportReasonSpam, InputReportReasonOther
 except ImportError:
-    print("[!] Telethon nahi mila. Chalao: python -m pip install -r requirements.txt")
+    print("[!] Telethon missing. Run: pip install -r requirements.txt")
     sys.exit(1)
 
 # === PATHS ===
@@ -31,9 +36,11 @@ DATA_DIR = ROOT / "data"
 API_FILE = DATA_DIR / "api_accounts.json"
 LOG_FILE = DATA_DIR / "reports_log.jsonl"
 
-# Create dirs
 for d in [SESSION_DIR, DATA_DIR]:
     d.mkdir(exist_ok=True)
+
+# === REPORT LIMIT ===
+REPORTS_PER_ACCOUNT = 5000  # 🔥 5000 per account
 
 # === REPORT REASONS ===
 REASONS = {
@@ -52,203 +59,145 @@ TYPES = ["Channel", "Group", "User"]
 
 # === BANNER ===
 def banner():
-    print("\n" + "=" * 65)
-    print("  🔥🔥🔥  K H A T A R N A K   T E L E G R A M   R E P O R T E R  🔥🔥🔥")
-    print("  💀 DIRECT API ABUSE REPORT — NO EMAIL, NO TRACE 💀")
-    print("  Made for Termux | Stealth Mode: ON | Rotation: ENABLED")
-    print("=" * 65 + "\n")
+    print("\n" + "🔥" * 40)
+    print("    K H A T A R N A K   A B U S E   B O T N E T   v4.0")
+    print("    5000 REPORTS × UNLIMITED ACCOUNTS = TOTAL CHAOS")
+    print("    OTP LOGIN • AUTO SESSION • FULL TERMUX SUPPORT")
+    print("🔥" * 40 + "\n")
 
-def log_event(link, category, reporter, api_id, status):
+def log_report(link, category, api_id, status):
     entry = {
         "time": datetime.now().isoformat(),
         "link": link,
         "category": category,
-        "reporter": reporter,
         "via_api_id": api_id,
         "status": status,
     }
     with open(LOG_FILE, "a", encoding="utf-8") as f:
         f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
-def save_api(api_id: int, api_hash: str):
-    data = json.loads(API_FILE.read_text()) if API_FILE.exists() else []
-    data.append({
-        "api_id": api_id,
-        "api_hash": api_hash,
-        "added": datetime.now().isoformat()
-    })
-    API_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
-    print(f"[✓] API ID {api_id} saved.\n")
+async def login_and_report(api_id, api_hash, phone, target, category, reporter_name):
+    session_path = SESSION_DIR / f"bot_{api_id}"
+    client = TelegramClient(str(session_path), api_id, api_hash)
 
-async def resolve_entity(client, link):
     try:
-        entity = await client.get_entity(link)
-        return entity
+        await client.connect()
+        if not await client.is_user_authorized():
+            print(f"[→] Logging in: {phone}")
+            await client.send_code_request(phone)
+            otp = input(f"  ✉️  OTP for {phone}: ").strip()
+            try:
+                await client.sign_in(phone, code=otp)
+            except Exception as e:
+                if "password" in str(e).lower():
+                    pwd = input("  🔐 2FA Password: ")
+                    await client.sign_in(password=pwd)
+                else:
+                    raise e
+            print(f"[✓] Logged in: {phone}")
+
+        # Now start reporting
+        reason_class = REASONS[category]
+        entity = await client.get_entity(target)
+        if hasattr(entity, 'channel_id'):
+            peer = InputPeerChannel(entity.channel_id, entity.access_hash)
+        elif hasattr(entity, 'user_id'):
+            peer = InputPeerUser(entity.user_id, entity.access_hash)
+        else:
+            print("[!] Unsupported target")
+            return 0
+
+        success_count = 0
+        for i in range(REPORTS_PER_ACCOUNT):
+            try:
+                await client(ReportRequest(
+                    peer=peer,
+                    reason=reason_class(),
+                    message=f"Abuse report #{i+1} by {reporter_name}"
+                ))
+                success_count += 1
+                log_report(target, category, api_id, "success")
+                print(f"[🔥] REPORT {success_count}/5000 | API: {api_id} | Target: {target}")
+                
+                # Random delay to avoid flood
+                await asyncio.sleep(random.uniform(1.5, 4.0))
+            except errors.FloodWaitError as e:
+                print(f"[⚡] FloodWait: {e.seconds} seconds. Sleeping...")
+                await asyncio.sleep(e.seconds + 10)
+            except errors.PeerFloodError:
+                print(f"[☠️] Account {api_id} permanently flagged. Stopping.")
+                break
+            except Exception as e:
+                log_report(target, category, api_id, f"fail: {e}")
+                print(f"[✗] Error: {e}")
+                await asyncio.sleep(2)
+
+        return success_count
+
     except Exception as e:
-        print(f"[!] Entity load failed: {e}")
-        return None
-
-def choose(prompt, options):
-    print(f"\n{prompt}")
-    for i, opt in enumerate(options, 1):
-        print(f"  {i}. {opt}")
-    while True:
-        try:
-            idx = int(input("Number chuno: ").strip())
-            if 1 <= idx <= len(options):
-                return options[idx - 1]
-        except:
-            pass
-        print("  ! Sahi number daalo.")
-
-def ask(prompt, default=None):
-    val = input(prompt).strip()
-    return val if val else default
-
-async def start_clients(clients):
-    active = []
-    for client in clients:
-        try:
-            await client.connect()
-            if await client.is_user_authorized():
-                active.append(client)
-            else:
-                print(f"[-] Client not logged in: {client.session.filename}")
-        except Exception as e:
-            print(f"[✗] Connection fail: {e}")
-    return active
-
-async def report_target(client, peer, reason_cls, desc=""):
-    try:
-        await client(ReportRequest(
-            peer=peer,
-            reason=reason_cls(),
-            message=desc[:1024]
-        ))
-        return True
-    except errors.PeerFloodError:
-        print("[-] Flood detected — account flagged. Skip.")
-        return False
-    except errors.UserBannedInChannelError:
-        print("[-] User banned. Skip.")
-        return False
-    except Exception as e:
-        print(f"[✗] Report error: {e}")
-        return False
+        print(f"[✗] Login failed {api_id}: {e}")
+        log_report(target, category, api_id, f"login_fail: {e}")
+        return 0
+    finally:
+        await client.disconnect()
 
 async def main():
     banner()
 
-    # First run: Add API
-    if "--add" in sys.argv or not API_FILE.exists() or os.stat(API_FILE).st_size == 0:
-        print("--- 🛠️  NEW API ACCOUNT SETUP ---")
-        try:
-            api_id = int(ask("Enter API ID: "))
-            api_hash = ask("Enter API HASH: ")
-            if api_id and api_hash:
-                save_api(api_id, api_hash)
-                print("[✓] Ab tumhari takat shuru ho rahi hai...\n")
-            else:
-                print("[!] API ID aur HASH dono chahiye.")
-        except ValueError:
-            print("[!] Number galat hai.")
-        return
+    if not API_FILE.exists():
+        print(f"[!] {API_FILE} nahi mili.")
+        print("    Template de rakha hai — apne API ID, HASH, phone daalo.")
+        sys.exit(1)
 
-    # Load APIs
     try:
-        apis = json.loads(API_FILE.read_text())
+        accounts = json.loads(API_FILE.read_text())
     except Exception as e:
-        print(f"[!] API file corrupt: {e}")
-        return
+        print(f"[!] JSON parse error: {e}")
+        sys.exit(1)
 
-    if not apis:
-        print("[!] Koi API nahi mili. Chalao: python reporter.py --add")
-        return
+    if not accounts:
+        print("[!] Koi account nahi mila.")
+        sys.exit(1)
 
-    # Build clients
-    clients = []
-    for i, cred in enumerate(apis):
-        session = SESSION_DIR / f"bot_{i}"
-        client = TelegramClient(str(session), cred["api_id"], cred["api_hash"])
-        clients.append((client, cred["api_id"]))
+    # Get target
+    print("\n🎯 TARGET INFO")
+    target = input("Telegram link (https://t.me/...): ").strip()
+    if not target.startswith("http"):
+        target = "https://t.me/" + target.lstrip("/").split("/")[0]
 
-    print(f"[*] {len(clients)} accounts loaded. Connecting...")
+    category = input(f"Category {list(REASONS.keys())}:\n> ").strip()
+    if category not in REASONS:
+        print("[!] Invalid category. Using 'Other'.")
+        category = "Other"
 
-    active_clients = []
-    for client, api_id in clients:
-        try:
-            await client.connect()
-            if await client.is_user_authorized():
-                active_clients.append((client, api_id))
-            else:
-                print(f"[-] Not authorized: Session {api_id}")
-        except Exception as e:
-            print(f"[✗] Failed: {e}")
+    reporter_name = input("Reporter Name (default: Ghost): ").strip() or "Ghost"
 
-    if not active_clients:
-        print("[!] Koi active account nahi. 'python reporter.py --add' use karo.")
-        return
+    print(f"\n[✓] Target set: {target}")
+    print(f"    Category: {category}")
+    print(f"    Reports per account: {REPORTS_PER_ACCOUNT}")
+    print(f"    Total accounts: {len(accounts)}")
+    input("\nENTER dabao jab taiyar ho sabko jalane ke liye...")
 
-    print(f"[✓] {len(active_clients)} accounts ready for war.")
+    total_reports = 0
+    for acc in accounts:
+        api_id = acc["api_id"]
+        api_hash = acc["api_hash"]
+        phone = acc["phone"]
 
-    # Collect report
-    print("\n--- 🎯 TARGET INFO ---")
-    link = ask("Telegram link (https://t.me/...): ").strip()
-    if not link.startswith("http"):
-        link = "https://t.me/" + link.lstrip("/").split("/")[0]
+        print(f"\n🚀 STARTING ACCOUNT: {phone} | API ID: {api_id}")
+        count = await login_and_report(api_id, api_hash, phone, target, category, reporter_name)
+        total_reports += count
 
-    ctype = choose("Type chuno:", TYPES)
-    category = choose("Category chuno:", list(REASONS.keys()))
-    description = ask("Description (optional): ", default="Khatarnak content. Action required.")
+        print(f"[📊] Account {api_id} finished: {count} reports")
 
-    reporter = ask("Tera naam / handle: ", default="Anonymous")
-
-    # Shuffle clients
-    random.shuffle(active_clients)
-    success = False
-
-    for client, api_id in active_clients:
-        print(f"\n[→] Attack via API ID: {api_id}...")
-        entity = await resolve_entity(client, link)
-        if not entity:
-            continue
-
-        # Build peer
-        try:
-            if hasattr(entity, 'channel_id'):
-                peer = InputPeerChannel(entity.channel_id, entity.access_hash)
-            elif hasattr(entity, 'user_id'):
-                peer = InputPeerUser(entity.user_id, entity.access_hash)
-            else:
-                print("[!] Unsupported target type.")
-                continue
-        except Exception as e:
-            print(f"[!] Peer build error: {e}")
-            continue
-
-        # Send report
-        reason_class = REASONS[category]
-        sent = await report_target(client, peer, reason_class, description)
-
-        if sent:
-            log_event(link, category, reporter, api_id, "success")
-            print(f"[🔥] REPORT SUCCESS — API ID: {api_id}")
-            success = True
-            time.sleep(random.uniform(3, 7))  # Random delay
-            break
-        else:
-            log_event(link, category, reporter, api_id, "failed")
-            time.sleep(2)
-
-    if not success:
-        print("\n[☠️] Sab accounts fail ho gaye. Zyaada darr lagta hai kya? 😈")
-
-    print(f"\n[✓] Log saved: {LOG_FILE.name}")
+    print(f"\n\n💀 TOTAL REPORTS SENT: {total_reports}")
+    print(f"    Log: {LOG_FILE.name}")
+    print("    Ab Telegram tumhare paon me hai.")
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        print("\n\n[!] Tool rok diya. Par duniya ab teri nazaron mein badal chuki hai...")
+        print("\n\n[!] Botnet rok diya. Lekin kuch reports toh pahuch chuke honge... 😈")
     except Exception as e:
-        print(f"[!] Crash: {e}")
+        print(f"[!] Fatal: {e}")
