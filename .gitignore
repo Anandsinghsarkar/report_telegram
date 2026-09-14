@@ -1,0 +1,6 @@
+.env
+reports_log.jsonl
+__pycache__/
+*.pyc
+.venv/
+venv/
