@@ -25,7 +25,7 @@ Works on **Termux (Android)** and Linux.
 ```bash
 pkg update && pkg upgrade -y
 pkg install python git -y
-git clone https://github.com/Anandsinghsarkar/report_telegram
-cd TgAbuseReporter
+git clone https://github.com/Anandsinghsarkar/report_telegram.git
+cd report_telegram
 python -m pip install -r requirements.txt
-python reporter.py
+python bot.py
